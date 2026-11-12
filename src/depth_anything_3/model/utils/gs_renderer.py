@@ -31,16 +31,6 @@ from depth_anything_3.utils.camera_trj_helpers import (
 from depth_anything_3.utils.geometry import affine_inverse, as_homogeneous, get_fov
 from depth_anything_3.utils.logger import logger
 
-try:
-    from gsplat import rasterization
-except ImportError:
-    logger.warn(
-        "Dependency `gsplat` is required for rendering 3DGS. "
-        "Install via: pip install git+https://github.com/nerfstudio-project/"
-        "gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70"
-    )
-
-
 def render_3dgs(
     extrinsics: torch.Tensor,  # "batch_views 4 4", w2c
     intrinsics: torch.Tensor,  # "batch_views 3 3", normalized
@@ -55,6 +45,8 @@ def render_3dgs(
     torch.Tensor,  # "batch_views 3 height width"
     torch.Tensor,  # "batch_views height width"
 ]:
+    from gsplat import rasterization
+
     # extract gaussian params
     gaussian_means = gaussian.means
     gaussian_scales = gaussian.scales

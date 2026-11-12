@@ -1,24 +1,3 @@
-pre-commit
-trimesh
-torch>=2
-torchvision
-einops
-huggingface_hub
-imageio
-numpy<2
-opencv-python
-xformers
-open3d
-fastapi
-uvicorn
-requests
-typer
-pillow
-omegaconf
-evo
-e3nn
-moviepy
-plyfile
-pillow_heif
-safetensors
-pycolmap
+# Core dependencies have one source of truth in pyproject.toml. Run from this repo.
+# Optional tools: pip install -e ".[cli,video,colmap]".
+-e .

@@ -15,7 +15,6 @@
 from typing import List
 import numpy as np
 import torch
-from evo.core.trajectory import PosePath3D
 
 from depth_anything_3.utils.geometry import affine_inverse, affine_inverse_np
 
@@ -62,7 +61,7 @@ def batch_align_poses_umeyama(ext_ref: torch.Tensor, ext_est: torch.Tensor):
     return torch.stack(rots), torch.stack(trans), torch.stack(scales)
 
 
-# Dependencies: affine_inverse_np, PosePath3D (maintain consistency with your existing project)
+# Alignment is implemented with NumPy to avoid evo's user-home settings/log files.
 
 
 def _to44(ext):
@@ -82,11 +81,28 @@ def _poses_from_ext(ext_ref, ext_est):
 
 
 def _umeyama_sim3_from_paths(pose_ref, pose_est):
-    path_ref = PosePath3D(poses_se3=pose_ref.copy())
-    path_est = PosePath3D(poses_se3=pose_est.copy())
-    r, t, s = path_est.align(path_ref, correct_scale=True)
-    pose_est_aligned = np.stack(path_est.poses_se3)
-    return r, t, s, pose_est_aligned
+    """Fit the orientation-preserving similarity from estimated to reference centers."""
+    pose_ref = np.asarray(pose_ref, dtype=np.float64)
+    pose_est = np.asarray(pose_est, dtype=np.float64)
+    if pose_ref.shape != pose_est.shape or pose_ref.ndim != 3 or pose_ref.shape[1:] != (4, 4):
+        raise ValueError("matching (N, 4, 4) camera poses are required")
+    if len(pose_ref) < 3 or not np.isfinite(pose_ref).all() or not np.isfinite(pose_est).all():
+        raise ValueError("at least three finite camera poses are required")
+    target, source = pose_ref[:, :3, 3], pose_est[:, :3, 3]
+    target_mean, source_mean = target.mean(axis=0), source.mean(axis=0)
+    target_centered, source_centered = target - target_mean, source - source_mean
+    covariance = target_centered.T @ source_centered / len(source)
+    variance = np.square(source_centered).sum() / len(source)
+    if variance <= 0 or np.linalg.matrix_rank(covariance) < 2:
+        raise ValueError("camera centers must not be coincident or collinear")
+    u, singular_values, vt = np.linalg.svd(covariance)
+    signs = np.ones(3)
+    if np.linalg.det(u @ vt) < 0:
+        signs[-1] = -1
+    r = (u * signs) @ vt
+    s = float(np.dot(singular_values, signs) / variance)
+    t = target_mean - s * (r @ source_mean)
+    return r, t, s, _apply_sim3_to_poses(pose_est, r, t, s)
 
 
 def _apply_sim3_to_poses(poses, r, t, s):
@@ -283,10 +299,10 @@ def _rand_rot():
     u1, u2, u3 = np.random.rand(3)
     q = np.array(
         [
-            np.sqrt(1 - u1) * np.sin(2 * np.math.pi * u2),
-            np.sqrt(1 - u1) * np.cos(2 * np.math.pi * u2),
-            np.sqrt(u1) * np.sin(2 * np.math.pi * u3),
-            np.sqrt(u1) * np.cos(2 * np.math.pi * u3),
+            np.sqrt(1 - u1) * np.sin(2 * np.pi * u2),
+            np.sqrt(1 - u1) * np.cos(2 * np.pi * u2),
+            np.sqrt(u1) * np.sin(2 * np.pi * u3),
+            np.sqrt(u1) * np.cos(2 * np.pi * u3),
         ]
     )
     w, x, y, z = q

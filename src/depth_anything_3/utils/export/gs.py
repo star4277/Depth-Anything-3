@@ -14,14 +14,9 @@
 
 import os
 from typing import Literal, Optional
-import moviepy.editor as mpy
 import torch
 
-from depth_anything_3.model.utils.gs_renderer import run_renderer_in_chunk_w_trj_mode
 from depth_anything_3.specs import Prediction
-from depth_anything_3.utils.gsply_helpers import save_gaussian_ply
-from depth_anything_3.utils.layout_helpers import hcat, vcat
-from depth_anything_3.utils.visualize import vis_depth_map_tensor
 
 VIDEO_QUALITY_MAP = {
     "low": {"crf": "28", "preset": "veryfast"},
@@ -37,6 +32,8 @@ def export_to_gs_ply(
         int
     ] = 1,  # export GS every N views, useful for extremely dense inputs
 ):
+    from depth_anything_3.utils.gsply_helpers import save_gaussian_ply
+
     gs_world = prediction.gaussians
     pred_depth = torch.from_numpy(prediction.depth).unsqueeze(-1).to(gs_world.means)  # v h w 1
     idx = 0
@@ -81,6 +78,11 @@ def export_to_gs_video(
     output_name: Optional[str] = None,
     video_quality: Literal["low", "medium", "high"] = "high",
 ) -> None:
+    from depth_anything_3.model.utils.gs_renderer import run_renderer_in_chunk_w_trj_mode
+    from depth_anything_3.utils.layout_helpers import hcat, vcat
+    from depth_anything_3.utils.video import write_rgb_video
+    from depth_anything_3.utils.visualize import vis_depth_map_tensor
+
     gs_world = prediction.gaussians
     # if target poses are not provided, render the (smooth/interpolate) input poses
     if extrinsics is not None:
@@ -124,8 +126,6 @@ def export_to_gs_video(
         VIDEO_QUALITY_MAP[video_quality]["crf"],
         "-preset",
         VIDEO_QUALITY_MAP[video_quality]["preset"],
-        "-pix_fmt",
-        "yuv420p",
     ]  # best compatibility
 
     os.makedirs(os.path.join(export_dir, "gs_video"), exist_ok=True)
@@ -140,15 +140,9 @@ def export_to_gs_video(
         )  # T x H x W x C, uint8, numpy()
 
         fps = 24
-        clip = mpy.ImageSequenceClip(frames, fps=fps)
-        output_name = f"{idx:04d}_{trj_mode}" if output_name is None else output_name
-        save_path = os.path.join(export_dir, f"gs_video/{output_name}.mp4")
-        # clip.write_videofile(save_path, codec="libx264", audio=False, bitrate="4000k")
-        clip.write_videofile(
-            save_path,
-            codec="libx264",
-            audio=False,
-            fps=fps,
-            ffmpeg_params=ffmpeg_params,
-        )
+        name = f"{idx:04d}_{trj_mode}" if output_name is None else output_name
+        if output_name is not None and color.shape[0] > 1:
+            name = f"{output_name}_{idx:04d}"
+        save_path = os.path.join(export_dir, f"gs_video/{name}.mp4")
+        write_rgb_video(frames, save_path, fps=fps, ffmpeg_params=ffmpeg_params)
     return
